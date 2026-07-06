@@ -1245,11 +1245,7 @@ export function App() {
             </a>
           ))}
         </div>
-        <p className="footer__fine">
-          UNIT-02: custom hologram chassis, built in-house · UNIT-01 body:
-          RobotExpressive (three.js) · rendered with React Three Fiber on Bun
-          · © 2026 Hyluxtic
-        </p>
+        <p className="footer__fine">© 2026 Hyluxtic — all systems in-house.</p>
       </footer>
 
       {topupOpen && cfg && (
