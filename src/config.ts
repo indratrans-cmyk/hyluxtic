@@ -53,6 +53,17 @@ export interface Theme {
 
 export const THEMES: Theme[] = [
   {
+    id: "violet",
+    label: "Violet",
+    accent: "#a78bfa",
+    accent2: "#ff5ce1",
+    bg: "#08040f",
+    body: "#34205f",
+    emissive: "#29104f",
+    eyes: "#c4b5fd",
+    shadow: "#7c3aed",
+  },
+  {
     id: "spectra",
     label: "Spectra",
     accent: "#3de8ff",
@@ -62,17 +73,6 @@ export const THEMES: Theme[] = [
     emissive: "#0a2e3f",
     eyes: "#66f0ff",
     shadow: "#0891b2",
-  },
-  {
-    id: "violet",
-    label: "Violet",
-    accent: "#a78bfa",
-    accent2: "#ff5ce1",
-    bg: "#070412",
-    body: "#34205f",
-    emissive: "#29104f",
-    eyes: "#c4b5fd",
-    shadow: "#7c3aed",
   },
   {
     id: "aurum",

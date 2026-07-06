@@ -1,7 +1,13 @@
 import { useMemo, useRef } from "react";
 import * as THREE from "three";
 import { Canvas, useFrame } from "@react-three/fiber";
-import { Environment, Float, Lightformer, Sparkles } from "@react-three/drei";
+import {
+  Environment,
+  Float,
+  Lightformer,
+  RoundedBox,
+  Sparkles,
+} from "@react-three/drei";
 import type { Theme } from "../config";
 
 /* "Holo-Core" — the Hyluxtic power source. An iridescent core suspended in a
@@ -67,9 +73,42 @@ function Satellites({ color }: { color: THREE.Color }) {
   );
 }
 
+/** Branded face texture — a glowing "H" on dark glass, redrawn per theme. */
+function useBrandTexture(color: string) {
+  return useMemo(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = canvas.height = 256;
+    const ctx = canvas.getContext("2d");
+    if (ctx) {
+      ctx.fillStyle = "#0b0616";
+      ctx.fillRect(0, 0, 256, 256);
+      ctx.globalAlpha = 0.4;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 5;
+      ctx.strokeRect(16, 16, 224, 224);
+      ctx.globalAlpha = 1;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.font = "900 165px Archivo, 'Arial Black', sans-serif";
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 34;
+      ctx.fillStyle = color;
+      ctx.fillText("H", 128, 138);
+      ctx.shadowBlur = 12;
+      ctx.fillStyle = "#ffffff";
+      ctx.globalAlpha = 0.85;
+      ctx.font = "900 150px Archivo, 'Arial Black', sans-serif";
+      ctx.fillText("H", 128, 138);
+    }
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    return texture;
+  }, [color]);
+}
+
 function Core({ theme }: { theme: Theme }) {
   const groupRef = useRef<THREE.Group>(null);
-  const coreRef = useRef<THREE.Mesh>(null);
+  const coreRef = useRef<THREE.Group>(null);
 
   const accent = useMemo(() => new THREE.Color(theme.accent), [theme.accent]);
   const accent2 = useMemo(() => new THREE.Color(theme.accent2), [theme.accent2]);
@@ -95,34 +134,37 @@ function Core({ theme }: { theme: Theme }) {
     }
   });
 
+  const brandTexture = useBrandTexture(theme.accent);
+
   return (
     <group ref={groupRef}>
       <Float speed={1.6} rotationIntensity={0.15} floatIntensity={0.7}>
-        {/* iridescent core */}
-        <mesh ref={coreRef}>
-          <icosahedronGeometry args={[1.05, 1]} />
-          <meshPhysicalMaterial
-            color={new THREE.Color(theme.body)}
-            metalness={0.85}
-            roughness={0.18}
-            clearcoat={1}
-            clearcoatRoughness={0.2}
-            iridescence={1}
-            iridescenceIOR={1.6}
-            emissive={new THREE.Color(theme.emissive)}
-            emissiveIntensity={0.6}
-            envMapIntensity={2.2}
-            flatShading
-          />
-        </mesh>
+        {/* the $HLUX core — glowing branded cube */}
+        <group ref={coreRef}>
+          <RoundedBox args={[1.55, 1.55, 1.55]} radius={0.14} smoothness={4}>
+            <meshBasicMaterial map={brandTexture} toneMapped={false} />
+          </RoundedBox>
+          {/* additive halo shell */}
+          <mesh scale={1.12}>
+            <boxGeometry args={[1.55, 1.55, 1.55]} />
+            <meshBasicMaterial
+              color={accent}
+              transparent
+              opacity={0.08}
+              blending={THREE.AdditiveBlending}
+              depthWrite={false}
+              toneMapped={false}
+            />
+          </mesh>
+        </group>
         {/* wireframe shell */}
-        <mesh scale={1.45}>
+        <mesh scale={1.5} rotation={[0.5, 0.7, 0.2]}>
           <icosahedronGeometry args={[1.05, 1]} />
           <meshBasicMaterial
             color={accent}
             wireframe
             transparent
-            opacity={0.14}
+            opacity={0.12}
             blending={THREE.AdditiveBlending}
             depthWrite={false}
             toneMapped={false}

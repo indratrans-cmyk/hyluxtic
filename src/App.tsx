@@ -680,7 +680,7 @@ export function App() {
               Connect wallet
             </button>
           )}
-          <a className="btn btn--solid" href="#agent">
+          <a className="btn btn--primary" href="#agent">
             Enter the space
           </a>
         </div>
@@ -693,27 +693,29 @@ export function App() {
           <div className="hero__glow" aria-hidden="true" />
           <div className="hero__visual" aria-hidden="true">
             <HeroOrnament theme={theme} />
+            <span className="corner corner--tl" />
+            <span className="corner corner--br" />
+            <div className="hero__caption">$hlux core · rendered live</div>
           </div>
           <div className="hero__content">
           <p className="eyebrow">
-            <span className="eyebrow__dot" /> living digital infrastructure —
-            built on solana
+            <span className="eyebrow__dot" /> presence — the internet, alive
           </p>
           <h1 className="hero__title">
-            <span>The internet,</span>
-            <span className="holo-sweep">alive.</span>
+            <span>Not a chatbot.</span>
+            <span className="holo-sweep">A workforce.</span>
           </h1>
           <p className="hero__sub">
-            Hyluxtic turns static pages into living digital spaces — 3D
-            environments staffed by AI workers that speak, remember, and
-            transact. Below: our first worker, rendered live in your browser.
+            Hyluxtic workers have a face, a voice and a body. They greet your
+            visitors, get things done, then settle up on-chain — living inside
+            your website. Meet them below, rendered live in your browser.
           </p>
           <div className="hero__cta">
-            <a className="btn btn--solid btn--lg" href="#agent">
-              ▶ Meet UNIT-01
+            <a className="btn btn--primary btn--lg" href="#agent">
+              Build your worker ↗
             </a>
-            <a className="btn btn--ghost btn--lg" href="#capabilities">
-              Read the vision
+            <a className="btn btn--ghost btn--lg" href="#token">
+              Explore $HLUX
             </a>
           </div>
           <ul className="hero__stats">
