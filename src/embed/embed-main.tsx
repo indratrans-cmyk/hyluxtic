@@ -1,3 +1,4 @@
+import "../polyfill";
 import { createRoot } from "react-dom/client";
 import { EmbedApp } from "./EmbedApp";
 
