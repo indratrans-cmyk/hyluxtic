@@ -135,6 +135,28 @@ tridi/
 | Ekspresi | morph target `Angry/Surprised/Sad` di-lerp per frame (eksponensial, k=8) |
 | Interaksi | klik = Wave; badan lean mengikuti kursor (grup luar, tidak bentrok mixer) |
 
+### UNIT-02 — drone hologram prosedural (`Drone.tsx`)
+
+Worker kedua yang **dibangun 100% dari kode** — tanpa file model, tanpa aset
+eksternal (identitas visual milik sendiri, ukuran nyaris nol):
+
+- **Chassis**: kepala kotak + torso silinder 8-sisi yang meruncing ke bawah
+  (gaya hologram, tanpa kaki), lengan artikulasi 2 sendi, antena berdenyut,
+  ring pinggang emissive, beam thruster additive di bawah ujung.
+- **Layar wajah hidup**: `CanvasTexture` 256×128 digambar ulang real-time —
+  mata & mulut animasi per ekspresi (Neutral/Angry/Surprised/Sad), kedip
+  otomatis tiap ~3.7 detik, pupil mengikuti kursor, senyum "bernafas".
+  Saat Death: layar mati menyisakan satu garis statik redup.
+- **Gestur prosedural** (dipetakan ke nama clip yang sama dengan UNIT-01,
+  jadi tombol, keyboard, autopilot, dan otak AI bekerja tanpa perubahan):
+  Wave, Yes (angguk), No (geleng), ThumbsUp, Punch (jab + lunge), Jump
+  (squash-stretch pop), Dance (loop), Walking/Running (patroli orbit),
+  Death (power-down: tenggelam ke ring, lampu padam, reboot saat move baru).
+  Semua sendi di-damping eksponensial → transisi selalu halus.
+- Ganti worker: tombol **WORKER** di dek (persist di `localStorage`), atau
+  `data-worker="unit02"` di widget embed. Persona AI ikut berubah
+  (UNIT-02 lebih "cocky", didefinisikan di `brain.ts`).
+
 ### Holo-Core hero (`HeroOrnament.tsx`)
 
 Canvas kedua yang ringan (tanpa post-processing, dpr max 1.5, alpha):
@@ -247,6 +269,7 @@ Pasang di website mana pun:
 |---|---|---|
 | `data-owner` | — | Wallet yang ditagih untuk pemakaian AI (pemilik situs top-up di situs utama) |
 | `data-theme` | `spectra` | `spectra` · `violet` · `aurum` · `verdant` |
+| `data-worker` | `unit01` | `unit01` (robot klasik) · `unit02` (drone hologram) |
 | `data-width` / `data-height` | 380px / 540px | Ukuran iframe |
 
 Tanpa `data-owner`, pengunjung memakai kuota gratis per-IP. Kredit habis →

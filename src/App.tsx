@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useProgress } from "@react-three/drei";
-import { Stage } from "./scene/Stage";
+import { Stage, type WorkerId } from "./scene/Stage";
 import { HeroOrnament } from "./scene/HeroOrnament";
 import { interpret } from "./commands";
 import { blip, chirp, hushSpeech, shutter, speak } from "./voice";
@@ -43,6 +43,21 @@ interface LiveStats {
   solIn: number;
   payments: number;
 }
+
+const WORKERS: Array<{ id: WorkerId; name: string; role: string; blurb: string }> = [
+  {
+    id: "unit01",
+    name: "UNIT-01",
+    role: "hylux worker",
+    blurb: "classic chassis · skeletal rig",
+  },
+  {
+    id: "unit02",
+    name: "UNIT-02",
+    role: "hologram drone",
+    blurb: "built in-house · procedural",
+  },
+];
 
 const SOCIALS = [
   { label: "X / Twitter", href: "#", tag: "@hyluxtic" },
@@ -155,6 +170,17 @@ export function App() {
   mutedRef.current = muted;
 
   const [stats, setStats] = useState<LiveStats | null>(null);
+  const [worker, setWorker] = useState<WorkerId>(() => {
+    const saved = localStorage.getItem("hyluxtic-worker");
+    return saved === "unit02" ? "unit02" : "unit01";
+  });
+  const activeWorker = WORKERS.find((w) => w.id === worker) ?? WORKERS[0]!;
+
+  const switchWorker = useCallback((id: WorkerId) => {
+    setWorker(id);
+    localStorage.setItem("hyluxtic-worker", id);
+    blip(id === "unit02" ? 980 : 620, 0.06);
+  }, []);
 
   const triggerMove = useCallback((clip: string) => {
     setMove((prev) => ({ clip, nonce: prev.nonce + 1 }));
@@ -280,7 +306,11 @@ export function App() {
         const res = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: input, wallet: wallet ?? undefined }),
+          body: JSON.stringify({
+            message: input,
+            wallet: wallet ?? undefined,
+            worker: activeWorker.name,
+          }),
         });
         if (res.status === 402) {
           const data = (await res.json()) as { error: string };
@@ -322,7 +352,7 @@ export function App() {
         setThinking(false);
       }
     },
-    [cfg, wallet, applyDirective, triggerMove, say],
+    [cfg, wallet, activeWorker.name, applyDirective, triggerMove, say],
   );
 
   const handleTopup = useCallback(
@@ -558,14 +588,15 @@ export function App() {
         {/* ---------- LIVE WORKER ---------- */}
         <section className="section" id="agent">
           <div className="section__head">
-            <span className="section__index">01 — live worker</span>
+            <span className="section__index">01 — live workers</span>
             <h2>
-              Say hello to <span className="text-holo">UNIT-01</span>.
+              Meet the <span className="text-holo">workforce</span>.
             </h2>
             <p>
-              A Hyluxtic worker prototype. Drag to orbit, scroll to zoom, click
-              the unit to make it wave. Everything here renders in real time —
-              skeletal animation, facial morphs, iridescent PBR, and bloom.
+              Two Hyluxtic worker prototypes — switch between them in the deck.
+              Drag to orbit, click a unit to make it wave. Everything renders
+              in real time: skeletal animation, a procedural hologram chassis,
+              live face screens, iridescent PBR, and bloom.
             </p>
           </div>
 
@@ -576,6 +607,7 @@ export function App() {
                   move={move}
                   expression={expression}
                   theme={theme}
+                  worker={worker}
                   onFinished={handleFinished}
                   onTap={handleTap}
                   onFps={setFps}
@@ -593,9 +625,9 @@ export function App() {
                   {Math.min(2, Math.round((window.devicePixelRatio || 1) * 10) / 10)}
                 </div>
                 <div className="hud hud--bl">
-                  <div className="hud__unit">UNIT-01</div>
+                  <div className="hud__unit">{activeWorker.name}</div>
                   <div className="hud__role">
-                    hylux worker · {move.clip.toLowerCase()} ·{" "}
+                    {activeWorker.role} · {move.clip.toLowerCase()} ·{" "}
                     {expression.toLowerCase()}
                   </div>
                 </div>
@@ -629,6 +661,23 @@ export function App() {
               </div>
 
               <aside className="deck">
+                <div className="deck__group">
+                  <div className="deck__label">worker</div>
+                  <div className="deck__row">
+                    {WORKERS.map((w) => (
+                      <button
+                        type="button"
+                        key={w.id}
+                        className={`workerbtn ${worker === w.id ? "workerbtn--on" : ""}`}
+                        onClick={() => switchWorker(w.id)}
+                      >
+                        <span className="workerbtn__name">{w.name}</span>
+                        <span className="workerbtn__blurb">{w.blurb}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 <div className="deck__group">
                   <div className="deck__labelrow">
                     <div className="deck__label">transmit</div>
@@ -1009,8 +1058,9 @@ export function App() {
           ))}
         </div>
         <p className="footer__fine">
-          UNIT-01 body: RobotExpressive (three.js examples) · rendered with
-          React Three Fiber on Bun · © 2026 Hyluxtic
+          UNIT-02: custom hologram chassis, built in-house · UNIT-01 body:
+          RobotExpressive (three.js) · rendered with React Three Fiber on Bun
+          · © 2026 Hyluxtic
         </p>
       </footer>
 

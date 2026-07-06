@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useProgress } from "@react-three/drei";
-import { Stage } from "../scene/Stage";
+import { Stage, type WorkerId } from "../scene/Stage";
 import { interpret } from "../commands";
 import { blip, chirp } from "../voice";
 import { DEFAULT_THEME, THEMES } from "../config";
@@ -8,6 +8,7 @@ import { DEFAULT_THEME, THEMES } from "../config";
 const params = new URLSearchParams(window.location.search);
 const OWNER = params.get("owner") ?? undefined; // site-owner wallet, billed for AI usage
 const THEME = THEMES.find((t) => t.id === params.get("theme")) ?? DEFAULT_THEME;
+const WORKER: WorkerId = params.get("worker") === "unit02" ? "unit02" : "unit01";
 const IDLE = { clip: "Idle", nonce: 0 };
 
 export function EmbedApp() {
@@ -76,7 +77,11 @@ export function EmbedApp() {
         const res = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: input, wallet: OWNER }),
+          body: JSON.stringify({
+            message: input,
+            wallet: OWNER,
+            worker: WORKER === "unit02" ? "UNIT-02" : "UNIT-01",
+          }),
         });
         if (res.status === 402) {
           setExpression("Sad");
@@ -118,6 +123,7 @@ export function EmbedApp() {
           move={move}
           expression={expression}
           theme={THEME}
+          worker={WORKER}
           onFinished={handleFinished}
           onTap={() => {
             chirp();

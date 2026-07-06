@@ -116,7 +116,7 @@ const server = Bun.serve({
           "unknown";
         if (rateLimited(ip)) return json({ error: "rate_limited" }, 429);
 
-        let body: { message?: string; wallet?: string };
+        let body: { message?: string; wallet?: string; worker?: string };
         try {
           body = (await req.json()) as typeof body;
         } catch {
@@ -124,6 +124,7 @@ const server = Bun.serve({
         }
         const message = (body.message ?? "").trim().slice(0, 300);
         if (!message) return json({ error: "message required" }, 400);
+        const workerName = body.worker === "UNIT-02" ? "UNIT-02" : "UNIT-01";
 
         if (!activeProvider()) {
           // No free LLM configured — the client falls back to local rules.
@@ -143,7 +144,7 @@ const server = Bun.serve({
 
         try {
           const sessionKey = wallet || `ip:${ip}`;
-          const result = await think(message, getHistory(sessionKey));
+          const result = await think(message, getHistory(sessionKey), workerName);
           if (!result) return json({ source: "rules" });
           appendTurns(sessionKey, [
             { role: "user", content: message },

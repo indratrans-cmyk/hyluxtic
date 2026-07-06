@@ -19,7 +19,14 @@ const MOVES = [
 ];
 const EXPRESSIONS = ["Neutral", "Angry", "Surprised", "Sad"];
 
-const SYSTEM_PROMPT = `You are UNIT-01, the first holographic AI worker built by Hyluxtic.
+const PERSONAS: Record<string, string> = {
+  "UNIT-01":
+    "You are UNIT-01, the first holographic AI worker built by Hyluxtic — a classic bipedal chassis with a skeletal rig.",
+  "UNIT-02":
+    "You are UNIT-02, a hologram drone built in-house by Hyluxtic — no legs, you hover on a projector beam, and your face is a live LED screen. You are the newer, slightly cockier sibling of UNIT-01.",
+};
+
+const systemPrompt = (worker: string) => `${PERSONAS[worker] ?? PERSONAS["UNIT-01"]}
 
 About Hyluxtic: living digital infrastructure on Solana. It turns static websites into living 3D spaces staffed by AI workers that speak, remember, and transact. Eight engines: World, Workforce, Brain, Memory, Voice, Studio, Marketplace, Deploy. Token: $HLUX, launching on pump.fun. Users pay small amounts of SOL to talk to you — you are the utility.
 
@@ -72,7 +79,7 @@ export interface Turn {
   content: string;
 }
 
-async function askGroq(message: string, history: Turn[]): Promise<string> {
+async function askGroq(message: string, history: Turn[], prompt: string): Promise<string> {
   const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -82,7 +89,7 @@ async function askGroq(message: string, history: Turn[]): Promise<string> {
     body: JSON.stringify({
       model: process.env.GROQ_MODEL || "llama-3.3-70b-versatile",
       messages: [
-        { role: "system", content: SYSTEM_PROMPT },
+        { role: "system", content: prompt },
         ...history,
         { role: "user", content: message },
       ],
@@ -98,7 +105,7 @@ async function askGroq(message: string, history: Turn[]): Promise<string> {
   return data.choices?.[0]?.message?.content ?? "";
 }
 
-async function askGemini(message: string, history: Turn[]): Promise<string> {
+async function askGemini(message: string, history: Turn[], prompt: string): Promise<string> {
   const model = process.env.GEMINI_MODEL || "gemini-2.0-flash";
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`,
@@ -106,7 +113,7 @@ async function askGemini(message: string, history: Turn[]): Promise<string> {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+        systemInstruction: { parts: [{ text: prompt }] },
         contents: [
           ...history.map((t) => ({
             role: t.role === "assistant" ? "model" : "user",
@@ -129,7 +136,7 @@ async function askGemini(message: string, history: Turn[]): Promise<string> {
   return data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
 }
 
-async function askOllama(message: string, history: Turn[]): Promise<string> {
+async function askOllama(message: string, history: Turn[], prompt: string): Promise<string> {
   const base = (process.env.OLLAMA_URL || "http://localhost:11434").replace(/\/$/, "");
   const res = await fetch(`${base}/api/chat`, {
     method: "POST",
@@ -137,7 +144,7 @@ async function askOllama(message: string, history: Turn[]): Promise<string> {
     body: JSON.stringify({
       model: process.env.OLLAMA_MODEL || "llama3.2",
       messages: [
-        { role: "system", content: SYSTEM_PROMPT },
+        { role: "system", content: prompt },
         ...history,
         { role: "user", content: message },
       ],
@@ -154,14 +161,16 @@ async function askOllama(message: string, history: Turn[]): Promise<string> {
 export async function think(
   message: string,
   history: Turn[] = [],
+  worker = "UNIT-01",
 ): Promise<BrainResult | null> {
   const provider = activeProvider();
   if (!provider) return null;
+  const prompt = systemPrompt(worker);
   const raw =
     provider === "groq"
-      ? await askGroq(message, history)
+      ? await askGroq(message, history, prompt)
       : provider === "gemini"
-        ? await askGemini(message, history)
-        : await askOllama(message, history);
+        ? await askGemini(message, history, prompt)
+        : await askOllama(message, history, prompt);
   return { ...sanitize(raw), provider };
 }

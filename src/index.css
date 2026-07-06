@@ -766,6 +766,49 @@ kbd {
   border-color: var(--line-strong);
 }
 
+.workerbtn {
+  flex: 1 1 calc(50% - 4px);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+  font-family: var(--mono);
+  text-align: left;
+  color: var(--muted);
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    color 0.15s ease;
+}
+
+.workerbtn:hover {
+  border-color: var(--line-strong);
+  color: var(--text);
+}
+
+.workerbtn--on {
+  border-color: var(--accent);
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+.workerbtn__name {
+  font-family: var(--display);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+}
+
+.workerbtn__blurb {
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  color: var(--muted-2);
+}
+
 .transmit {
   display: flex;
   gap: 6px;

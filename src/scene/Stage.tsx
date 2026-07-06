@@ -11,12 +11,16 @@ import {
 } from "@react-three/drei";
 import { Bloom, EffectComposer, Vignette } from "@react-three/postprocessing";
 import { Robot } from "./Robot";
+import { Drone } from "./Drone";
 import type { Theme } from "../config";
+
+export type WorkerId = "unit01" | "unit02";
 
 interface StageProps {
   move: { clip: string; nonce: number };
   expression: string;
   theme: Theme;
+  worker?: WorkerId;
   onFinished: () => void;
   onTap: () => void;
   onFps: (fps: number) => void;
@@ -90,7 +94,15 @@ function FpsProbe({ onFps }: { onFps: (fps: number) => void }) {
   return null;
 }
 
-export function Stage({ move, expression, theme, onFinished, onTap, onFps }: StageProps) {
+export function Stage({
+  move,
+  expression,
+  theme,
+  worker = "unit01",
+  onFinished,
+  onTap,
+  onFps,
+}: StageProps) {
   return (
     <Canvas
       camera={{ position: [0, 2.0, 7.8], fov: 38 }}
@@ -134,13 +146,23 @@ export function Stage({ move, expression, theme, onFinished, onTap, onFps }: Sta
       </Environment>
 
       <Suspense fallback={null}>
-        <Robot
-          move={move}
-          expression={expression}
-          theme={theme}
-          onFinished={onFinished}
-          onTap={onTap}
-        />
+        {worker === "unit02" ? (
+          <Drone
+            move={move}
+            expression={expression}
+            theme={theme}
+            onFinished={onFinished}
+            onTap={onTap}
+          />
+        ) : (
+          <Robot
+            move={move}
+            expression={expression}
+            theme={theme}
+            onFinished={onFinished}
+            onTap={onTap}
+          />
+        )}
       </Suspense>
 
       <ProjectorRing theme={theme} />
