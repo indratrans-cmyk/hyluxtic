@@ -80,3 +80,68 @@ export async function verifyTransfer(
   }
   return { lamports };
 }
+
+interface TokenBalance {
+  accountIndex: number;
+  mint: string;
+  owner?: string;
+  uiTokenAmount: { amount: string; decimals: number; uiAmount: number | null };
+}
+
+interface ParsedTxWithTokens extends ParsedTx {
+  meta?: {
+    err: unknown;
+    preTokenBalances?: TokenBalance[];
+    postTokenBalances?: TokenBalance[];
+  } | null;
+}
+
+export interface VerifiedTokenPayment {
+  uiAmount: number;
+  rawAmount: bigint;
+}
+
+/**
+ * Verify an SPL-token transfer of `mint` into the treasury's token account by
+ * comparing pre/post token balances — robust against transfer vs transferChecked
+ * and works for pump.fun tokens.
+ */
+export async function verifyTokenTransfer(
+  signature: string,
+  treasury: string,
+  mint: string,
+): Promise<VerifiedTokenPayment> {
+  const tx = await rpc<ParsedTxWithTokens | null>("getTransaction", [
+    signature,
+    {
+      encoding: "jsonParsed",
+      commitment: "confirmed",
+      maxSupportedTransactionVersion: 0,
+    },
+  ]);
+
+  if (!tx) throw new Error("transaction not found (not confirmed yet? retry shortly)");
+  if (tx.meta?.err) throw new Error("transaction failed on-chain");
+
+  const age = Date.now() / 1000 - (tx.blockTime ?? 0);
+  if (!tx.blockTime || age > MAX_AGE_SECONDS) {
+    throw new Error("transaction too old to redeem");
+  }
+
+  const post = tx.meta?.postTokenBalances?.find(
+    (b) => b.mint === mint && b.owner === treasury,
+  );
+  if (!post) throw new Error("no $HLUX transfer to the treasury found");
+  const pre = tx.meta?.preTokenBalances?.find(
+    (b) => b.accountIndex === post.accountIndex,
+  );
+
+  const delta =
+    BigInt(post.uiTokenAmount.amount) - BigInt(pre?.uiTokenAmount.amount ?? "0");
+  if (delta <= 0n) throw new Error("treasury token balance did not increase");
+
+  return {
+    rawAmount: delta,
+    uiAmount: Number(delta) / 10 ** post.uiTokenAmount.decimals,
+  };
+}

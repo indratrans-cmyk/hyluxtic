@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useProgress } from "@react-three/drei";
 import { Stage } from "./scene/Stage";
+import { HeroOrnament } from "./scene/HeroOrnament";
 import { interpret } from "./commands";
 import { blip, chirp, hushSpeech, shutter, speak } from "./voice";
-import { connectWallet, getPhantom, paySol, shortAddress } from "./wallet";
+import { connectWallet, getPhantom, paySol, payToken, shortAddress } from "./wallet";
 import type { CreditPackage } from "./shared/economy";
 import {
   DEFAULT_THEME,
@@ -25,6 +26,9 @@ interface SiteConfig {
   tokenCa: string;
   pumpUrl: string;
   aiProvider: string | null;
+  hluxMint: string;
+  hluxPerCredit: number;
+  hluxDecimals: number;
 }
 
 interface AccountInfo {
@@ -322,7 +326,7 @@ export function App() {
   );
 
   const handleTopup = useCallback(
-    async (pkg: CreditPackage) => {
+    async (pkg: CreditPackage, payWith: "SOL" | "HLUX" = "SOL") => {
       if (!cfg?.treasury) return;
       try {
         let addr = wallet;
@@ -331,12 +335,22 @@ export function App() {
           setWallet(addr);
         }
         setPayState("Waiting for wallet signature…");
-        const signature = await paySol(cfg.rpc, cfg.treasury, pkg.lamports, addr);
+        const signature =
+          payWith === "HLUX"
+            ? await payToken(
+                cfg.rpc,
+                cfg.treasury,
+                cfg.hluxMint,
+                cfg.hluxDecimals,
+                pkg.credits * cfg.hluxPerCredit,
+                addr,
+              )
+            : await paySol(cfg.rpc, cfg.treasury, pkg.lamports, addr);
         setPayState("Confirmed on-chain. Verifying…");
         const res = await fetch("/api/verify-payment", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ signature, wallet: addr }),
+          body: JSON.stringify({ signature, wallet: addr, token: payWith }),
         });
         const data = (await res.json()) as {
           ok?: boolean;
@@ -400,6 +414,24 @@ export function App() {
     const id = setInterval(play, 4800);
     return () => clearInterval(id);
   }, [demo, triggerMove]);
+
+  // Scroll-reveal: sections ease in the first time they enter the viewport.
+  useEffect(() => {
+    const sections = document.querySelectorAll(".section");
+    const obs = new IntersectionObserver(
+      (entries) => {
+        for (const e of entries) {
+          if (e.isIntersecting) {
+            e.target.classList.add("section--in");
+            obs.unobserve(e.target);
+          }
+        }
+      },
+      { threshold: 0.1 },
+    );
+    sections.forEach((s) => obs.observe(s));
+    return () => obs.disconnect();
+  }, []);
 
   // Keyboard: 1–0 for moves, Z X C V for expressions.
   useEffect(() => {
@@ -466,6 +498,10 @@ export function App() {
         <section className="hero">
           <div className="hero__grid" aria-hidden="true" />
           <div className="hero__glow" aria-hidden="true" />
+          <div className="hero__visual" aria-hidden="true">
+            <HeroOrnament theme={theme} />
+          </div>
+          <div className="hero__content">
           <p className="eyebrow">
             <span className="eyebrow__dot" /> living digital infrastructure —
             built on solana
@@ -502,7 +538,22 @@ export function App() {
               <b>{fps > 0 ? fps : "60"}</b> fps live
             </li>
           </ul>
+          </div>
         </section>
+
+        {/* ---------- TICKER ---------- */}
+        <div className="ticker" aria-hidden="true">
+          <div className="ticker__track">
+            {[0, 1].map((k) => (
+              <span key={k}>
+                $HLUX — living digital infrastructure · UNIT-01 live now ·{" "}
+                {stats ? stats.aiMessages.toLocaleString() : "—"} ai replies
+                served · pay-per-use on solana · non-custodial · launching on
+                pump.fun · the internet, alive ·{" "}
+              </span>
+            ))}
+          </div>
+        </div>
 
         {/* ---------- LIVE WORKER ---------- */}
         <section className="section" id="agent">
@@ -905,6 +956,43 @@ export function App() {
             ))}
           </div>
         </section>
+
+        {/* ---------- EMBED ---------- */}
+        <section className="section" id="embed">
+          <div className="section__head">
+            <span className="section__index">06 — embed</span>
+            <h2>
+              UNIT-01 on <span className="text-holo">your site.</span>
+            </h2>
+            <p>
+              One script tag and the worker appears on any website. AI usage
+              bills the credits of the wallet you pass — your visitors chat,
+              you stay in control.
+            </p>
+          </div>
+          <div className="embedbox">
+            <pre className="embedbox__code">
+              <code>{`<script src="${typeof window !== "undefined" ? window.location.origin : ""}/embed.js"\n        data-owner="YOUR_WALLET" data-theme="spectra"></script>`}</code>
+            </pre>
+            <div className="embedbox__actions">
+              <button
+                type="button"
+                className="btn btn--solid"
+                onClick={() => {
+                  void navigator.clipboard.writeText(
+                    `<script src="${window.location.origin}/embed.js" data-owner="YOUR_WALLET" data-theme="spectra"></script>`,
+                  );
+                  blip(900, 0.05);
+                }}
+              >
+                ⧉ Copy snippet
+              </button>
+              <a className="btn btn--ghost" href="/embed" target="_blank" rel="noreferrer">
+                ▶ Live preview
+              </a>
+            </div>
+          </div>
+        </section>
       </main>
 
       <footer className="footer">
@@ -959,18 +1047,32 @@ export function App() {
             </p>
             <div className="modal__packages">
               {cfg.packages.map((p) => (
-                <button
-                  type="button"
-                  key={p.id}
-                  className="pkg"
-                  onClick={() => void handleTopup(p)}
-                  disabled={!!payState && payState.endsWith("…")}
-                >
-                  {p.tag && <span className="pkg__tag">{p.tag}</span>}
-                  <span className="pkg__name">{p.label}</span>
-                  <span className="pkg__sol">{p.sol} SOL</span>
-                  <span className="pkg__credits">{p.credits} messages</span>
-                </button>
+                <div className="pkgcol" key={p.id}>
+                  <button
+                    type="button"
+                    className="pkg"
+                    onClick={() => void handleTopup(p, "SOL")}
+                    disabled={!!payState && payState.endsWith("…")}
+                  >
+                    {p.tag && <span className="pkg__tag">{p.tag}</span>}
+                    <span className="pkg__name">{p.label}</span>
+                    <span className="pkg__sol">{p.sol} SOL</span>
+                    <span className="pkg__credits">{p.credits} messages</span>
+                  </button>
+                  {cfg.hluxMint && (
+                    <button
+                      type="button"
+                      className="pkg pkg--hlux"
+                      onClick={() => void handleTopup(p, "HLUX")}
+                      disabled={!!payState && payState.endsWith("…")}
+                      title="Pay with $HLUX"
+                    >
+                      <span className="pkg__credits">
+                        or {(p.credits * cfg.hluxPerCredit).toLocaleString()} $HLUX
+                      </span>
+                    </button>
+                  )}
+                </div>
               ))}
             </div>
             {!getPhantom() && (

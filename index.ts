@@ -1,4 +1,5 @@
 import index from "./index.html";
+import embed from "./embed.html";
 import { activeProvider, think } from "./src/server/brain";
 import {
   appendTurns,
@@ -12,13 +13,17 @@ import {
   useIpMessage,
   useWalletMessage,
 } from "./src/server/db";
-import { verifyTransfer } from "./src/server/solana";
+import { verifyTokenTransfer, verifyTransfer } from "./src/server/solana";
 import { creditsForLamports, FREE_MESSAGES, PACKAGES } from "./src/shared/economy";
 
 const TREASURY = process.env.TREASURY_WALLET || "";
 const SOLANA_RPC = process.env.SOLANA_RPC || "https://api.mainnet-beta.solana.com";
 const TOKEN_CA = process.env.TOKEN_CA || "";
 const PUMP_URL = process.env.PUMP_URL || "https://pump.fun";
+// $HLUX pay-per-use — activates when the mint is set (post pump.fun launch).
+const HLUX_MINT = process.env.HLUX_MINT || "";
+const HLUX_PER_CREDIT = Number(process.env.HLUX_PER_CREDIT || 0); // tokens per message credit
+const HLUX_DECIMALS = Number(process.env.HLUX_DECIMALS || 6);
 
 const json = (data: unknown, status = 200) =>
   new Response(JSON.stringify(data), {
@@ -43,6 +48,16 @@ const server = Bun.serve({
   port: 3012,
   routes: {
     "/": index,
+    "/embed": embed,
+
+    "/embed.js": () =>
+      new Response(Bun.file("src/embed/embed.js"), {
+        headers: {
+          "Content-Type": "application/javascript",
+          "Cache-Control": "public, max-age=3600",
+          "Access-Control-Allow-Origin": "*",
+        },
+      }),
 
     "/robot.glb": () =>
       new Response(Bun.file("aset/robot.glb"), {
@@ -66,6 +81,9 @@ const server = Bun.serve({
         tokenCa: TOKEN_CA,
         pumpUrl: PUMP_URL,
         aiProvider: activeProvider(),
+        hluxMint: HLUX_PER_CREDIT > 0 ? HLUX_MINT : "",
+        hluxPerCredit: HLUX_PER_CREDIT,
+        hluxDecimals: HLUX_DECIMALS,
       }),
 
     "/api/account": (req) => {
@@ -152,7 +170,7 @@ const server = Bun.serve({
       POST: async (req) => {
         if (!TREASURY) return json({ error: "treasury_not_configured" }, 503);
 
-        let body: { signature?: string; wallet?: string };
+        let body: { signature?: string; wallet?: string; token?: string };
         try {
           body = (await req.json()) as typeof body;
         } catch {
@@ -165,10 +183,26 @@ const server = Bun.serve({
         if (paymentExists(signature)) return json({ error: "already_redeemed" }, 409);
 
         try {
-          const { lamports } = await verifyTransfer(signature, wallet, TREASURY);
-          const credits = creditsForLamports(lamports);
+          let credits: number;
+          let amountRecorded: number;
+          let tokenKind: "SOL" | "HLUX" = "SOL";
+
+          if (body.token === "HLUX") {
+            if (!HLUX_MINT || HLUX_PER_CREDIT <= 0) {
+              return json({ error: "hlux_not_configured" }, 503);
+            }
+            const { uiAmount } = await verifyTokenTransfer(signature, TREASURY, HLUX_MINT);
+            credits = Math.floor(uiAmount / HLUX_PER_CREDIT);
+            amountRecorded = Math.round(uiAmount);
+            tokenKind = "HLUX";
+          } else {
+            const { lamports } = await verifyTransfer(signature, wallet, TREASURY);
+            credits = creditsForLamports(lamports);
+            amountRecorded = lamports;
+          }
+
           if (credits <= 0) return json({ error: "amount_too_small" }, 400);
-          const acc = recordPayment(signature, wallet, lamports, credits);
+          const acc = recordPayment(signature, wallet, amountRecorded, credits, tokenKind);
           return json({
             ok: true,
             creditsAdded: credits,

@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "bun --hot index.ts",
     "start": "NODE_ENV=production bun index.ts",
-    "build": "bun build index.html --outdir=dist --minify"
+    "build": "bun build index.html embed.html --outdir=dist --minify"
   },
   "devDependencies": {
     "@types/bun": "latest",
@@ -21,6 +21,7 @@
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.6.1",
     "@react-three/postprocessing": "^3.0.4",
+    "@solana/spl-token": "^0.4.14",
     "@solana/web3.js": "^1.98.4",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
