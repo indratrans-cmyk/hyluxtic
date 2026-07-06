@@ -32,9 +32,22 @@ export function getPhantom(): PhantomProvider | null {
   return null;
 }
 
+export function isMobile(): boolean {
+  return /android|iphone|ipad|ipod/i.test(navigator.userAgent);
+}
+
 export async function connectWallet(): Promise<string> {
   const provider = getPhantom();
   if (!provider) {
+    if (isMobile()) {
+      // No injected provider on mobile — reopen this site inside Phantom's
+      // in-app browser, where window.phantom.solana exists.
+      const url = `https://phantom.app/ul/browse/${encodeURIComponent(
+        window.location.href,
+      )}?ref=${encodeURIComponent(window.location.origin)}`;
+      window.location.href = url;
+      throw new Error("Opening in the Phantom app…");
+    }
     throw new Error("Phantom wallet not found — install it from phantom.app");
   }
   const { publicKey } = await provider.connect();

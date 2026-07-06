@@ -1,10 +1,11 @@
 import index from "./index.html";
 import embed from "./embed.html";
-import { activeProvider, think } from "./src/server/brain";
+import { activeProvider, think, thinkStream } from "./src/server/brain";
 import {
   appendTurns,
   getAccount,
   getHistory,
+  getPayments,
   getStats,
   ipFreeUsed,
   messageCount,
@@ -96,6 +97,125 @@ const server = Bun.serve({
         freeLeft: Math.max(0, FREE_MESSAGES - acc.free_used),
         msgCount: messageCount(wallet),
       });
+    },
+
+    "/health": () => {
+      let dbOk = true;
+      try {
+        getStats();
+      } catch {
+        dbOk = false;
+      }
+      return json({
+        ok: dbOk,
+        uptime: Math.round(process.uptime()),
+        aiProvider: activeProvider(),
+        treasury: !!TREASURY,
+        db: dbOk,
+      });
+    },
+
+    "/api/history": (req) => {
+      const wallet = new URL(req.url).searchParams.get("wallet");
+      if (!wallet) return json({ error: "wallet required" }, 400);
+      const acc = getAccount(wallet);
+      return json({
+        wallet,
+        credits: acc.credits,
+        freeLeft: Math.max(0, FREE_MESSAGES - acc.free_used),
+        msgCount: messageCount(wallet),
+        payments: getPayments(wallet).map((p) => ({
+          signature: p.signature,
+          sol: p.token === "SOL" ? p.lamports / 1_000_000_000 : null,
+          hlux: p.token === "HLUX" ? p.lamports : null,
+          credits: p.credits,
+          token: p.token,
+          at: p.created_at,
+        })),
+      });
+    },
+
+    "/api/chat/stream": {
+      POST: async (req, srv) => {
+        const ip =
+          req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+          srv.requestIP(req)?.address ||
+          "unknown";
+        if (rateLimited(ip)) return json({ error: "rate_limited" }, 429);
+
+        let body: { message?: string; wallet?: string; worker?: string };
+        try {
+          body = (await req.json()) as typeof body;
+        } catch {
+          return json({ error: "invalid json" }, 400);
+        }
+        const message = (body.message ?? "").trim().slice(0, 300);
+        if (!message) return json({ error: "message required" }, 400);
+        const workerName = body.worker === "UNIT-02" ? "UNIT-02" : "UNIT-01";
+
+        if (!activeProvider()) return json({ source: "rules" });
+
+        const wallet = body.wallet?.trim();
+        const allowed = wallet
+          ? useWalletMessage(wallet, FREE_MESSAGES)
+          : useIpMessage(ip, FREE_MESSAGES);
+        if (!allowed) {
+          return json({ error: wallet ? "no_credits" : "connect_wallet" }, 402);
+        }
+
+        const sessionKey = wallet || `ip:${ip}`;
+        const history = getHistory(sessionKey);
+        const encoder = new TextEncoder();
+
+        const stream = new ReadableStream({
+          async start(controller) {
+            const send = (event: string, data: unknown) =>
+              controller.enqueue(
+                encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`),
+              );
+            try {
+              const result = await thinkStream(message, history, workerName, {
+                onMeta: (meta) => send("meta", meta),
+                onToken: (text) => send("token", { text }),
+              });
+              if (result) {
+                appendTurns(sessionKey, [
+                  { role: "user", content: message },
+                  { role: "assistant", content: result.reply },
+                ]);
+                const remaining = wallet
+                  ? (() => {
+                      const acc = getAccount(wallet);
+                      return {
+                        credits: acc.credits,
+                        freeLeft: Math.max(0, FREE_MESSAGES - acc.free_used),
+                      };
+                    })()
+                  : {
+                      credits: 0,
+                      freeLeft: Math.max(0, FREE_MESSAGES - ipFreeUsed(ip)),
+                    };
+                send("done", { reply: result.reply, remaining });
+              } else {
+                send("error", { fallback: true });
+              }
+            } catch (err) {
+              console.error("brain stream error:", err);
+              send("error", { fallback: true });
+            } finally {
+              controller.close();
+            }
+          },
+        });
+
+        return new Response(stream, {
+          headers: {
+            "Content-Type": "text/event-stream",
+            "Cache-Control": "no-cache",
+            Connection: "keep-alive",
+          },
+        });
+      },
     },
 
     "/api/stats": () => {

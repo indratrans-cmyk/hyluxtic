@@ -14,6 +14,7 @@ interface DroneProps {
   move: { clip: string; nonce: number };
   expression: string;
   theme: Theme;
+  talking?: boolean;
   onFinished: () => void;
   onTap: () => void;
 }
@@ -44,6 +45,7 @@ function drawFace(
   t: number,
   pupilX: number,
   pupilY: number,
+  talking: boolean,
 ) {
   ctx.clearRect(0, 0, w, h);
   ctx.fillStyle = "#020509";
@@ -115,7 +117,14 @@ function drawFace(
   const my = h * 0.74;
   ctx.lineWidth = h * 0.045;
   ctx.beginPath();
-  if (state === "Surprised") {
+  if (talking) {
+    // animated speech bars — the unit is talking
+    const open = Math.abs(Math.sin(t * 11)) * 0.6 + Math.abs(Math.sin(t * 17)) * 0.4;
+    const mw = w * 0.14;
+    const mh = h * (0.05 + open * 0.16);
+    ctx.roundRect(cx - mw / 2, my - mh / 2, mw, mh, Math.min(mw, mh) / 2);
+    ctx.fill();
+  } else if (state === "Surprised") {
     ctx.arc(cx, my, w * 0.035, 0, Math.PI * 2);
     ctx.stroke();
   } else if (state === "Sad") {
@@ -135,7 +144,14 @@ function drawFace(
 
 /* ---------- drone ---------- */
 
-export function Drone({ move, expression, theme, onFinished, onTap }: DroneProps) {
+export function Drone({
+  move,
+  expression,
+  theme,
+  talking = false,
+  onFinished,
+  onTap,
+}: DroneProps) {
   const rootRef = useRef<THREE.Group>(null); // lean/parallax
   const bodyRef = useRef<THREE.Group>(null); // hover + gesture translation
   const headRef = useRef<THREE.Group>(null);
@@ -421,6 +437,7 @@ export function Drone({ move, expression, theme, onFinished, onTap }: DroneProps
           t,
           state.pointer.x,
           state.pointer.y,
+          talking && !isDead,
         );
         face.texture.needsUpdate = true;
       }

@@ -243,7 +243,10 @@ Base: `http://localhost:3012` (dev). Semua respons JSON.
 | GET | `/api/config` | Konfigurasi publik: treasury, rpc, packages, freeMessages, tokenCa, pumpUrl, aiProvider, hluxMint/PerCredit/Decimals |
 | GET | `/api/account?wallet=` | `{credits, freeLeft, msgCount}` — auto-create akun |
 | GET | `/api/stats` | `{aiMessages, operators, solIn, payments}` — transparansi live |
-| POST | `/api/chat` | Body `{message, wallet?}` → `{source:"ai", reply, move, expression, remaining}` · `{source:"rules"}` · **402** `{error:"connect_wallet"\|"no_credits"}` · **429** rate limit (20/menit/IP) |
+| GET | `/health` | `{ok, uptime, aiProvider, treasury, db}` — untuk monitoring |
+| GET | `/api/history?wallet=` | Dashboard operator: kredit, pemakaian, daftar pembayaran |
+| POST | `/api/chat` | Body `{message, wallet?, worker?}` → `{source:"ai", reply, move, expression, remaining}` · `{source:"rules"}` · **402** `{error:"connect_wallet"\|"no_credits"}` · **429** rate limit (20/menit/IP) |
+| POST | `/api/chat/stream` | Sama seperti `/api/chat` tapi **SSE**: event `meta {move, expression}` → `token {text}`* → `done {reply, remaining}` / `error`. Streaming token asli di Groq; Gemini/Ollama buffered lewat protokol yang sama |
 | POST | `/api/verify-payment` | Body `{signature, wallet, token?:"SOL"\|"HLUX"}` → `{ok, creditsAdded, credits}` · 409 `already_redeemed` · 400 alasan gagal |
 
 Contoh:
@@ -294,6 +297,28 @@ Salin `.env.example` → `.env` (Bun memuatnya otomatis; tidak ikut git).
 | `NODE_ENV=production` | prod | Mematikan HMR |
 
 ---
+
+### Fitur klien lanjutan
+
+- **Streaming + wajah bicara**: jawaban AI mengalir kata-per-kata ke subtitle;
+  selama streaming/bicara, mulut UNIT-02 beranimasi (state `talking`).
+- **Input suara**: tombol 🎙 (Web Speech Recognition, `id-ID`/`en-US`
+  otomatis) — hasil ucapan langsung dikirim ke worker.
+- **Share**: tombol ⤴ membagikan PNG frame via Web Share API (mobile) atau
+  tweet intent (desktop). ⛶ mengunduh PNG.
+- **Mobile Phantom**: tanpa provider ter-inject di HP, tombol connect
+  membuka situs di in-app browser Phantom via deeplink `phantom.app/ul/browse`.
+- **Governor performa**: bila FPS bertahan < 36, scene turun ke mode eco
+  (dpr 1, tanpa antialias/bloom, partikel dikurangi) — HUD menampilkan "eco".
+- **Dashboard operator**: klik chip wallet di nav — kredit, pemakaian,
+  tabel pembayaran dengan link Solscan per transaksi.
+
+### Testing & CI
+
+`bun test` — 22 test untuk logika ekonomi (pencocokan paket/toleransi/tarif),
+interpreter perintah (EN+ID), dan pengerasan output LLM (`sanitize`,
+validator header streaming). GitHub Actions (`.github/workflows/ci.yml`)
+menjalankan typecheck + test + build di setiap push/PR.
 
 ## 10. Menjalankan & Deploy
 

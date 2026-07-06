@@ -45,8 +45,15 @@ export function shutter() {
 }
 
 /** Speak a line with a low robotic pitch. Cancels any line in progress. */
-export function speak(text: string, muted: boolean) {
-  if (muted || typeof speechSynthesis === "undefined") return;
+export function speak(
+  text: string,
+  muted: boolean,
+  hooks?: { onStart?: () => void; onEnd?: () => void },
+) {
+  if (muted || typeof speechSynthesis === "undefined") {
+    hooks?.onEnd?.();
+    return;
+  }
   try {
     const u = new SpeechSynthesisUtterance(text);
     u.rate = 1.02;
@@ -57,11 +64,62 @@ export function speak(text: string, muted: boolean) {
       voices.find((v) => v.lang.startsWith("en") && /google|microsoft/i.test(v.name)) ??
       voices.find((v) => v.lang.startsWith("en"));
     if (voice) u.voice = voice;
+    if (hooks?.onStart) u.onstart = hooks.onStart;
+    if (hooks?.onEnd) {
+      u.onend = hooks.onEnd;
+      u.onerror = hooks.onEnd;
+    }
     speechSynthesis.cancel();
     speechSynthesis.speak(u);
   } catch {
-    /* speech unavailable — subtitles still show */
+    hooks?.onEnd?.();
   }
+}
+
+/* ---------- speech recognition (voice input) ---------- */
+
+interface RecognitionLike {
+  lang: string;
+  interimResults: boolean;
+  maxAlternatives: number;
+  onresult: ((e: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
+  onend: (() => void) | null;
+  onerror: ((e: { error: string }) => void) | null;
+  start(): void;
+  stop(): void;
+  abort(): void;
+}
+
+export function createRecognizer(
+  lang: string,
+  hooks: { onResult: (text: string) => void; onEnd: () => void },
+): { start: () => void; stop: () => void } | null {
+  const w = window as unknown as {
+    SpeechRecognition?: new () => RecognitionLike;
+    webkitSpeechRecognition?: new () => RecognitionLike;
+  };
+  const SR = w.SpeechRecognition ?? w.webkitSpeechRecognition;
+  if (!SR) return null;
+  const rec = new SR();
+  rec.lang = lang;
+  rec.interimResults = false;
+  rec.maxAlternatives = 1;
+  rec.onresult = (e) => {
+    const text = e.results[0]?.[0]?.transcript ?? "";
+    if (text) hooks.onResult(text);
+  };
+  rec.onend = hooks.onEnd;
+  rec.onerror = hooks.onEnd;
+  return {
+    start: () => {
+      try {
+        rec.start();
+      } catch {
+        hooks.onEnd();
+      }
+    },
+    stop: () => rec.stop(),
+  };
 }
 
 export function hushSpeech() {

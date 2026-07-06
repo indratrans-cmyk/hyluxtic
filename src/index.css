@@ -687,10 +687,17 @@ kbd {
   animation: pulse 1.4s ease-in-out infinite;
 }
 
-.stage__capture {
+.stage__actions {
   position: absolute;
   top: 40px;
   right: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-end;
+}
+
+.stage__capture {
   font-family: var(--mono);
   font-size: 10px;
   letter-spacing: 0.18em;
@@ -837,6 +844,29 @@ kbd {
 .transmit__input:focus {
   border-color: var(--accent);
   box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+.transmit__mic {
+  width: 38px;
+  font-size: 13px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.02);
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.transmit__mic:hover {
+  border-color: var(--accent);
+}
+
+.transmit__mic--on {
+  color: #ff5c5c;
+  border-color: #ff5c5c;
+  box-shadow: 0 0 12px rgba(255, 92, 92, 0.4);
+  animation: pulse 1.2s ease-in-out infinite;
 }
 
 .transmit__send {
@@ -1471,6 +1501,82 @@ kbd {
 .pkg__credits {
   font-size: 10px;
   color: var(--muted-2);
+}
+
+/* operator dashboard */
+.dash__stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.dash__stat {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  text-align: center;
+}
+
+.dash__stat b {
+  display: block;
+  font-family: var(--display);
+  font-weight: 400;
+  font-size: 18px;
+  color: var(--accent);
+}
+
+.dash__stat span {
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted-2);
+}
+
+.dash__tablewrap {
+  overflow-x: auto;
+  margin-bottom: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.dash__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11.5px;
+}
+
+.dash__table th,
+.dash__table td {
+  padding: 8px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+}
+
+.dash__table th {
+  font-size: 9px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--muted-2);
+}
+
+.dash__table tr:last-child td {
+  border-bottom: 0;
+}
+
+.dash__link {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.dash__link:hover {
+  text-decoration: underline;
+}
+
+.chip--wallet {
+  cursor: pointer;
+  font-family: var(--mono);
+  background: transparent;
 }
 
 .modal__warn,

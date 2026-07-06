@@ -162,6 +162,22 @@ export function messageCount(sessionKey: string): number {
     .get(sessionKey)!.n;
 }
 
+export interface PaymentRow {
+  signature: string;
+  lamports: number;
+  credits: number;
+  created_at: number;
+  token: string;
+}
+
+export function getPayments(wallet: string, limit = 20): PaymentRow[] {
+  return db
+    .query<PaymentRow, [string, number]>(
+      "SELECT signature, lamports, credits, created_at, token FROM payments WHERE wallet = ? ORDER BY created_at DESC LIMIT ?",
+    )
+    .all(wallet, limit);
+}
+
 /* ---------- transparency stats ---------- */
 
 export interface Stats {

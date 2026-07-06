@@ -21,6 +21,8 @@ interface StageProps {
   expression: string;
   theme: Theme;
   worker?: WorkerId;
+  talking?: boolean;
+  lowPerf?: boolean;
   onFinished: () => void;
   onTap: () => void;
   onFps: (fps: number) => void;
@@ -99,6 +101,8 @@ export function Stage({
   expression,
   theme,
   worker = "unit01",
+  talking = false,
+  lowPerf = false,
   onFinished,
   onTap,
   onFps,
@@ -107,11 +111,11 @@ export function Stage({
     <Canvas
       camera={{ position: [0, 2.0, 7.8], fov: 38 }}
       gl={{
-        antialias: true,
+        antialias: !lowPerf,
         powerPreference: "high-performance",
         preserveDrawingBuffer: true, // enables the capture-frame button
       }}
-      dpr={[1, 2]}
+      dpr={lowPerf ? 1 : [1, 2]}
     >
       <color attach="background" args={[theme.bg]} />
       <fog attach="fog" args={[theme.bg, 10, 24]} />
@@ -151,6 +155,7 @@ export function Stage({
             move={move}
             expression={expression}
             theme={theme}
+            talking={talking}
             onFinished={onFinished}
             onTap={onTap}
           />
@@ -182,7 +187,7 @@ export function Stage({
       />
 
       <Sparkles
-        count={90}
+        count={lowPerf ? 30 : 90}
         scale={[7, 4.5, 7]}
         position={[0, 2, 0]}
         size={2.2}
@@ -212,16 +217,18 @@ export function Stage({
         autoRotateSpeed={0.55}
       />
 
-      <EffectComposer multisampling={0}>
-        <Bloom
-          mipmapBlur
-          intensity={0.9}
-          luminanceThreshold={0.72}
-          luminanceSmoothing={0.2}
-          radius={0.8}
-        />
-        <Vignette eskil={false} offset={0.22} darkness={0.78} />
-      </EffectComposer>
+      {!lowPerf && (
+        <EffectComposer multisampling={0}>
+          <Bloom
+            mipmapBlur
+            intensity={0.9}
+            luminanceThreshold={0.72}
+            luminanceSmoothing={0.2}
+            radius={0.8}
+          />
+          <Vignette eskil={false} offset={0.22} darkness={0.78} />
+        </EffectComposer>
+      )}
 
       <FpsProbe onFps={onFps} />
     </Canvas>

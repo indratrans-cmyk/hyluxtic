@@ -3,7 +3,7 @@ import { useProgress } from "@react-three/drei";
 import { Stage, type WorkerId } from "./scene/Stage";
 import { HeroOrnament } from "./scene/HeroOrnament";
 import { interpret } from "./commands";
-import { blip, chirp, hushSpeech, shutter, speak } from "./voice";
+import { blip, chirp, createRecognizer, hushSpeech, shutter, speak } from "./voice";
 import { connectWallet, getPhantom, paySol, payToken, shortAddress } from "./wallet";
 import type { CreditPackage } from "./shared/economy";
 import {
@@ -42,6 +42,20 @@ interface LiveStats {
   operators: number;
   solIn: number;
   payments: number;
+}
+
+interface HistoryData {
+  credits: number;
+  freeLeft: number;
+  msgCount: number;
+  payments: Array<{
+    signature: string;
+    sol: number | null;
+    hlux: number | null;
+    credits: number;
+    token: string;
+    at: number;
+  }>;
 }
 
 const WORKERS: Array<{ id: WorkerId; name: string; role: string; blurb: string }> = [
@@ -161,9 +175,18 @@ export function App() {
   const [wallet, setWallet] = useState<string | null>(null);
   const [account, setAccount] = useState<AccountInfo | null>(null);
   const [thinking, setThinking] = useState(false);
+  const [talking, setTalking] = useState(false);
+  const [listening, setListening] = useState(false);
+  const [lowPerf, setLowPerf] = useState(false);
+  const [dashOpen, setDashOpen] = useState(false);
+  const [history, setHistory] = useState<HistoryData | null>(null);
   const [topupOpen, setTopupOpen] = useState(false);
   const [payState, setPayState] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const talkSources = useRef({ stream: false, speech: false });
+  const syncTalking = useCallback(() => {
+    setTalking(talkSources.current.stream || talkSources.current.speech);
+  }, []);
   const demoStep = useRef(0);
   const stageBoxRef = useRef<HTMLDivElement>(null);
   const mutedRef = useRef(muted);
@@ -186,10 +209,22 @@ export function App() {
     setMove((prev) => ({ clip, nonce: prev.nonce + 1 }));
   }, []);
 
-  const say = useCallback((text: string) => {
-    setSaying((prev) => ({ text, nonce: (prev?.nonce ?? 0) + 1 }));
-    speak(text, mutedRef.current);
-  }, []);
+  const say = useCallback(
+    (text: string) => {
+      setSaying((prev) => ({ text, nonce: (prev?.nonce ?? 0) + 1 }));
+      speak(text, mutedRef.current, {
+        onStart: () => {
+          talkSources.current.speech = true;
+          syncTalking();
+        },
+        onEnd: () => {
+          talkSources.current.speech = false;
+          syncTalking();
+        },
+      });
+    },
+    [syncTalking],
+  );
 
   useEffect(() => {
     fetch("/api/config")
@@ -299,11 +334,11 @@ export function App() {
         return;
       }
 
-      // Free-form talk goes to the AI brain (free-tier backend, metered).
+      // Free-form talk streams from the AI brain (free-tier backend, metered).
       setDemo(false);
       setThinking(true);
       try {
-        const res = await fetch("/api/chat", {
+        const res = await fetch("/api/chat/stream", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -323,36 +358,85 @@ export function App() {
           setExpression("Sad");
           return;
         }
-        if (!res.ok) {
+        if (!res.ok || !res.body || !res.headers.get("content-type")?.includes("event-stream")) {
           applyDirective(local);
           return;
         }
-        const data = (await res.json()) as {
-          source: string;
-          reply?: string;
-          move?: string;
-          expression?: string;
-          remaining?: AccountInfo;
-        };
-        if (data.source === "ai" && data.reply) {
-          if (data.move && data.move !== "Idle") triggerMove(data.move);
-          if (data.expression) setExpression(data.expression);
-          say(data.reply);
-          if (data.remaining) {
-            setAccount((prev) =>
-              wallet ? data.remaining! : prev ? { ...prev, freeLeft: data.remaining!.freeLeft } : null,
-            );
+
+        // Parse the SSE stream: meta → token* → done|error.
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = "";
+        let text = "";
+        let gotAi = false;
+        setThinking(false);
+        talkSources.current.stream = true;
+        syncTalking();
+
+        const handleEvent = (event: string, raw: string) => {
+          try {
+            const data = JSON.parse(raw) as Record<string, unknown>;
+            if (event === "meta") {
+              gotAi = true;
+              const mv = data.move as string | undefined;
+              const ex = data.expression as string | undefined;
+              if (mv && mv !== "Idle") triggerMove(mv);
+              if (ex) setExpression(ex);
+              setSaying((prev) => ({ text: "", nonce: (prev?.nonce ?? 0) + 1 }));
+            } else if (event === "token") {
+              text += (data.text as string) ?? "";
+              setSaying((prev) => ({ text, nonce: prev?.nonce ?? 1 }));
+            } else if (event === "done") {
+              const reply = (data.reply as string) || text;
+              const remaining = data.remaining as AccountInfo | undefined;
+              speak(reply, mutedRef.current, {
+                onStart: () => {
+                  talkSources.current.speech = true;
+                  syncTalking();
+                },
+                onEnd: () => {
+                  talkSources.current.speech = false;
+                  syncTalking();
+                },
+              });
+              if (remaining) {
+                setAccount((prev) =>
+                  wallet
+                    ? { ...remaining, msgCount: prev?.msgCount }
+                    : prev
+                      ? { ...prev, freeLeft: remaining.freeLeft }
+                      : null,
+                );
+              }
+            } else if (event === "error" && !gotAi) {
+              applyDirective(local);
+            }
+          } catch {
+            /* malformed frame — skip */
           }
-        } else {
-          applyDirective(local);
+        };
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          const frames = buf.split("\n\n");
+          buf = frames.pop() ?? "";
+          for (const frame of frames) {
+            const eventMatch = frame.match(/^event: (.+)$/m);
+            const dataMatch = frame.match(/^data: (.+)$/m);
+            if (eventMatch?.[1] && dataMatch?.[1]) handleEvent(eventMatch[1], dataMatch[1]);
+          }
         }
       } catch {
         applyDirective(local);
       } finally {
         setThinking(false);
+        talkSources.current.stream = false;
+        syncTalking();
       }
     },
-    [cfg, wallet, activeWorker.name, applyDirective, triggerMove, say],
+    [cfg, wallet, activeWorker.name, applyDirective, triggerMove, say, syncTalking],
   );
 
   const handleTopup = useCallback(
@@ -414,10 +498,61 @@ export function App() {
     if (!canvas) return;
     shutter();
     const link = document.createElement("a");
-    link.download = "hyluxtic-unit01.png";
+    link.download = `hyluxtic-${worker}.png`;
     link.href = canvas.toDataURL("image/png");
     link.click();
-  }, []);
+  }, [worker]);
+
+  const handleShare = useCallback(async () => {
+    const canvas = stageBoxRef.current?.querySelector("canvas");
+    const text = `Say hello to ${activeWorker.name} — a living 3D AI worker by Hyluxtic ⚡ $HLUX`;
+    const url = window.location.origin;
+    blip(880, 0.05);
+    try {
+      if (canvas && navigator.canShare) {
+        const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, "image/png"));
+        if (blob) {
+          const file = new File([blob], "hyluxtic.png", { type: "image/png" });
+          if (navigator.canShare({ files: [file] })) {
+            await navigator.share({ files: [file], text, url });
+            return;
+          }
+        }
+      }
+    } catch {
+      /* user cancelled or share failed — fall through to X intent */
+    }
+    window.open(
+      `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`,
+      "_blank",
+      "noopener",
+    );
+  }, [activeWorker.name]);
+
+  // Voice input — speak to the worker; auto-submits on result.
+  const recognizer = useRef<{ start: () => void; stop: () => void } | null>(null);
+  const handleMic = useCallback(() => {
+    if (listening) {
+      recognizer.current?.stop();
+      return;
+    }
+    const lang = navigator.language?.startsWith("id") ? "id-ID" : "en-US";
+    recognizer.current = createRecognizer(lang, {
+      onResult: (text) => {
+        setDraft(text);
+        void handleTransmit(text);
+        setDraft("");
+      },
+      onEnd: () => setListening(false),
+    });
+    if (!recognizer.current) {
+      say("Voice input isn't available in this browser — type to me instead.");
+      return;
+    }
+    blip(760, 0.05);
+    setListening(true);
+    recognizer.current.start();
+  }, [listening, handleTransmit, say]);
 
   const handleFinished = useCallback(() => {
     setMove((prev) => ({ clip: "Idle", nonce: prev.nonce + 1 }));
@@ -444,6 +579,22 @@ export function App() {
     const id = setInterval(play, 4800);
     return () => clearInterval(id);
   }, [demo, triggerMove]);
+
+  // Performance governor: if FPS stays low after warm-up, drop to eco mode
+  // (dpr 1, no post-processing) — smoothness beats effects on weak devices.
+  const fpsSamples = useRef<number[]>([]);
+  const handleFps = useCallback((f: number) => {
+    setFps(f);
+    const s = fpsSamples.current;
+    s.push(f);
+    if (s.length > 8) s.shift();
+    if (s.length === 8 && s.every((v) => v < 36)) {
+      setLowPerf((prev) => {
+        if (!prev) blip(300, 0.08);
+        return true;
+      });
+    }
+  }, []);
 
   // Scroll-reveal: sections ease in the first time they enter the viewport.
   useEffect(() => {
@@ -508,10 +659,22 @@ export function App() {
         </nav>
         <div className="nav__right">
           {wallet ? (
-            <span className="chip chip--wallet" title={wallet}>
+            <button
+              type="button"
+              className="chip chip--wallet"
+              title={`${wallet} — open dashboard`}
+              onClick={() => {
+                setDashOpen(true);
+                blip(700, 0.05);
+                fetch(`/api/history?wallet=${encodeURIComponent(wallet)}`)
+                  .then((r) => r.json())
+                  .then((d: HistoryData) => setHistory(d))
+                  .catch(() => {});
+              }}
+            >
               ◈ {shortAddress(wallet)}
               {account ? ` · ${account.credits} cr` : ""}
-            </span>
+            </button>
           ) : (
             <button type="button" className="btn" onClick={handleConnect}>
               Connect wallet
@@ -608,9 +771,11 @@ export function App() {
                   expression={expression}
                   theme={theme}
                   worker={worker}
+                  talking={talking}
+                  lowPerf={lowPerf}
                   onFinished={handleFinished}
                   onTap={handleTap}
-                  onFps={setFps}
+                  onFps={handleFps}
                 />
                 <div className="stage__scan" aria-hidden="true" />
                 <span className="corner corner--tl" aria-hidden="true" />
@@ -621,8 +786,10 @@ export function App() {
                   <span className="hud__dot" /> live · webgl2
                 </div>
                 <div className="hud hud--tr">
-                  {fps} fps · dpr{" "}
-                  {Math.min(2, Math.round((window.devicePixelRatio || 1) * 10) / 10)}
+                  {fps} fps{lowPerf ? " · eco" : ""} · dpr{" "}
+                  {lowPerf
+                    ? 1
+                    : Math.min(2, Math.round((window.devicePixelRatio || 1) * 10) / 10)}
                 </div>
                 <div className="hud hud--bl">
                   <div className="hud__unit">{activeWorker.name}</div>
@@ -650,14 +817,24 @@ export function App() {
                     </div>
                   )
                 )}
-                <button
-                  type="button"
-                  className="stage__capture"
-                  onClick={handleCapture}
-                  title="Save a PNG of the current frame"
-                >
-                  ⛶ capture
-                </button>
+                <div className="stage__actions">
+                  <button
+                    type="button"
+                    className="stage__capture"
+                    onClick={handleCapture}
+                    title="Save a PNG of the current frame"
+                  >
+                    ⛶ capture
+                  </button>
+                  <button
+                    type="button"
+                    className="stage__capture"
+                    onClick={() => void handleShare()}
+                    title="Share to X / socials"
+                  >
+                    ⤴ share
+                  </button>
+                </div>
               </div>
 
               <aside className="deck">
@@ -705,18 +882,29 @@ export function App() {
                       setDraft("");
                     }}
                   >
+                    <button
+                      type="button"
+                      className={`transmit__mic ${listening ? "transmit__mic--on" : ""}`}
+                      onClick={handleMic}
+                      title={listening ? "Stop listening" : "Speak to the worker"}
+                      aria-label="Voice input"
+                    >
+                      {listening ? "●" : "🎙"}
+                    </button>
                     <input
                       className="transmit__input"
                       value={draft}
                       onChange={(e) => setDraft(e.target.value)}
                       placeholder={
-                        cfg?.aiProvider
-                          ? "talk to me — anything, any language"
-                          : 'say something… "dance", "who are you"'
+                        listening
+                          ? "listening…"
+                          : cfg?.aiProvider
+                            ? "talk to me — anything, any language"
+                            : 'say something… "dance", "who are you"'
                       }
                       maxLength={300}
                       spellCheck={false}
-                      disabled={thinking}
+                      disabled={thinking || listening}
                     />
                     <button className="transmit__send" type="submit" aria-label="Send">
                       ▸
@@ -1135,6 +1323,114 @@ export function App() {
               </p>
             )}
             {payState && <p className="modal__state">{payState}</p>}
+          </div>
+        </div>
+      )}
+
+      {dashOpen && wallet && (
+        <div
+          className="modal"
+          role="dialog"
+          aria-modal="true"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setDashOpen(false);
+          }}
+        >
+          <div className="modal__box">
+            <div className="modal__head">
+              <div className="deck__label">operator dashboard</div>
+              <button type="button" className="mini" onClick={() => setDashOpen(false)}>
+                ✕ close
+              </button>
+            </div>
+            <p className="modal__sub" title={wallet}>
+              ◈ {shortAddress(wallet)} ·{" "}
+              <a
+                href={`https://solscan.io/account/${wallet}`}
+                target="_blank"
+                rel="noreferrer"
+                className="dash__link"
+              >
+                view on Solscan ↗
+              </a>
+            </p>
+            {history ? (
+              <>
+                <div className="dash__stats">
+                  <div className="dash__stat">
+                    <b>{history.credits}</b>
+                    <span>credits</span>
+                  </div>
+                  <div className="dash__stat">
+                    <b>{history.freeLeft}</b>
+                    <span>free left</span>
+                  </div>
+                  <div className="dash__stat">
+                    <b>{history.msgCount}</b>
+                    <span>messages</span>
+                  </div>
+                  <div className="dash__stat">
+                    <b>{history.payments.length}</b>
+                    <span>payments</span>
+                  </div>
+                </div>
+                {history.payments.length > 0 ? (
+                  <div className="dash__tablewrap">
+                    <table className="dash__table">
+                      <thead>
+                        <tr>
+                          <th>date</th>
+                          <th>paid</th>
+                          <th>credits</th>
+                          <th>tx</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {history.payments.map((p) => (
+                          <tr key={p.signature}>
+                            <td>{new Date(p.at).toLocaleDateString()}</td>
+                            <td>
+                              {p.token === "SOL"
+                                ? `${p.sol?.toFixed(3)} SOL`
+                                : `${p.hlux?.toLocaleString()} $HLUX`}
+                            </td>
+                            <td>+{p.credits}</td>
+                            <td>
+                              <a
+                                href={`https://solscan.io/tx/${p.signature}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="dash__link"
+                              >
+                                {p.signature.slice(0, 6)}… ↗
+                              </a>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p className="modal__sub">
+                    No payments yet — your first {cfg?.freeMessages ?? 5} AI
+                    messages are free.
+                  </p>
+                )}
+                <button
+                  type="button"
+                  className="btn btn--solid"
+                  onClick={() => {
+                    setDashOpen(false);
+                    setPayState(null);
+                    setTopupOpen(true);
+                  }}
+                >
+                  ⚡ Top up credits
+                </button>
+              </>
+            ) : (
+              <p className="modal__sub">loading…</p>
+            )}
           </div>
         </div>
       )}
